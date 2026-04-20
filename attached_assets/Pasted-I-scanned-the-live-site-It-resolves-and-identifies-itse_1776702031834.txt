@@ -1,0 +1,142 @@
+I scanned the live site. It resolves and identifies itself as **“My Google AI Studio App”**, but the page content available to the crawler is essentially just the app shell, not rendered content. That pattern usually means **the HTML loads, then the frontend JavaScript fails before render**—which matches a Safari-only blank page symptom much more than a DNS or hosting issue. ([selcukergin.com][1])
+
+The strongest likely cause is this:
+
+**Your site is probably built with a modern Vite-style frontend target that Safari on some devices does not support.** Current Vite production builds default to a modern browser baseline, and Vite 7’s default browser target includes only **Safari 16.4+** unless you lower the target or add legacy support. Vite’s own docs also say older browsers need explicit legacy handling via `@vitejs/plugin-legacy`. ([vitejs][2])
+
+That means if your Safari version is older, or if WebKit on that device chokes on a modern bundle feature, you get the classic result: **white/blank page, no visible server error**.
+
+There are a few secondary possibilities too:
+
+* a full-screen loading overlay never gets dismissed in Safari,
+* a hydration/runtime crash from an unsupported API,
+* a bad asset/module load after deployment,
+* or a Replit publish/build mismatch. Replit’s own troubleshooting says to verify build/run commands and check deployment logs when a published app behaves differently from preview. ([Replit Docs][3])
+
+## What I think is happening
+
+Most likely order:
+
+1. HTML is served correctly.
+2. Safari downloads the JS bundle.
+3. The JS bundle or one dependency crashes on Safari.
+4. Since the app is client-rendered, you see a blank page.
+
+## What to ask Replit to fix
+
+Paste this into Replit Agent:
+
+```text
+My deployed site works in some browsers but shows a blank page in Safari. Please debug and fix it as a Safari compatibility issue.
+
+Goals:
+1. Make the site render on Safari, including older Safari/WebKit versions.
+2. Keep the current design and functionality unchanged.
+3. Add defensive error handling so a JS crash does not leave a blank page.
+
+Please do all of the following:
+
+A) Inspect the project stack and identify whether it uses Vite, React, Next, or another frontend bundler.
+
+B) If this is a Vite app:
+- set a safer build target for Safari compatibility
+- add @vitejs/plugin-legacy
+- configure legacy targets for Safari/iOS
+- rebuild and verify production output
+
+Use something like:
+- build.target = "es2018" or "es2019" unless a lower target is needed
+- add legacy plugin targets for Safari >= 13 and iOS >= 13 if possible
+
+C) Search the codebase for Safari-breaking patterns and fix them:
+- top-level await in browser code
+- unsupported modern syntax or APIs
+- replaceAll, structuredClone, BigInt, optional chaining edge cases, container queries, flex gap issues if they affect rendering
+- any fullscreen loader, animation, or overlay that may never resolve in Safari
+- any code relying on window, document, localStorage, matchMedia, ResizeObserver, IntersectionObserver, or WebGL without guards
+- any autoplay video, canvas, or blur/backdrop-filter behavior that blocks rendering
+
+D) Add runtime protection:
+- wrap app bootstrap in try/catch
+- log startup errors clearly
+- add a visible fallback UI instead of a blank page if the app crashes
+- log failed asset/module loads
+
+E) Check deployment-specific issues:
+- verify the production build is serving the correct JS/CSS asset paths
+- verify MIME types for JS modules are correct
+- verify no 404s on hashed assets
+- verify no base path issue
+- verify Replit deployment serves the built frontend, not source files
+
+F) Make these concrete code changes:
+- update vite.config.* if present
+- install and configure @vitejs/plugin-legacy if applicable
+- fix any incompatible code found
+- add an ErrorBoundary or equivalent app-level fallback
+- ensure loading state always clears even if one async call fails
+
+G) After changes:
+- explain exactly what was wrong
+- show the files changed
+- give me the final diff summary
+- tell me how to test Safari specifically
+```
+
+## If you want a more aggressive Replit prompt
+
+Use this version if you want it to act more like a senior frontend debugger:
+
+```text
+Act as a senior frontend production debugger. My deployed website shows a blank page on Safari. Do not redesign the site. Find the root cause and patch only what is necessary.
+
+Workflow:
+1. Detect framework and build system.
+2. Run the app in production mode, not just dev.
+3. Inspect startup path from index.html to app mount.
+4. Find any runtime or syntax errors that would break Safari.
+5. Fix build target and legacy compatibility if this is Vite.
+6. Check for a stuck loading overlay or hydration failure.
+7. Add an app-level crash fallback and console diagnostics.
+8. Verify deployment asset paths and module loading.
+
+Prioritize these likely causes:
+- Vite modern target incompatible with Safari/WebKit version
+- missing @vitejs/plugin-legacy
+- unsupported syntax/API in browser bundle
+- module script load failure
+- base path / asset 404 issue
+- CSS/JS overlay hiding the app forever
+
+Deliver:
+- exact root cause
+- exact files changed
+- short explanation of each change
+- final production-safe patch
+```
+
+## Manual checks you should do in Safari
+
+Use Safari Web Inspector on Mac/iPhone. WebKit’s official docs show how to enable remote inspection for iOS under **Settings → Safari → Advanced → Web Inspector**. ([WebKit][4])
+
+In the Safari console, look for errors like:
+
+* `SyntaxError`
+* `Unexpected token`
+* `Can't find variable`
+* `TypeError: undefined is not an object`
+* `Importing a module script failed`
+* asset 404s for hashed JS/CSS files
+
+## My practical diagnosis
+
+Without the repo or Safari console, I cannot prove the exact line that fails. But based on the live scan and the current Vite browser-compatibility defaults, the **most probable fix** is:
+
+**Lower the production build target and add legacy plugin support, then patch any Safari-incompatible API or stuck loader.** ([vitejs][2])
+
+If you paste your `package.json`, `vite.config.*`, and main entry file here, I’ll turn this into a much tighter Replit prompt tailored to your exact stack.
+
+[1]: https://selcukergin.com/ "My Google AI Studio App"
+[2]: https://vite.dev/guide/build?utm_source=chatgpt.com "Building for Production"
+[3]: https://docs.replit.com/cloud-services/deployments/troubleshooting?utm_source=chatgpt.com "Troubleshoot publishing"
+[4]: https://webkit.org/web-inspector/enabling-web-inspector/?utm_source=chatgpt.com "Enabling Web Inspector"
